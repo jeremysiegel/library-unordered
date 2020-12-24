@@ -265,7 +265,7 @@ tests({
       librarySystem(libraryName, dependencyName, function() {})
 
     } catch(e) {
-      var isTypeError = (e instanceof TypeError);
+      isTypeError = (e instanceof TypeError);
     }
 
     eq(isTypeError, true);
