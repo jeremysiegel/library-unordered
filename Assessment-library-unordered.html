@@ -1,28 +1,6 @@
 <script src="tinytest.js"></script>
 <script>
 
-// Function signature:
-// librarySystem(libraryName, dependencies, librarySetup)
-
-// Return value:
-// Requested library.
-
-// Callback:
-// It should accept a list of dependency libraries.
-
-// Requirements:
-
-// It should load libraries.
-// It should return a library when given a libraryName.
-// It should accept an array that lists required dependencies.
-// Libraries that need a dependency library should have access to the elements of the dependency.
-// It should accept more than one dependency library.
-// It should throw a TypeError if the second argument is not an array.
-// It should be able to load a library before loading its dependency.
-// It should be able to load a library before loading multiple dependencies.
-// It should be able to load multiple libraries needing the same dependency before loading that dependency.
-// It should run the librarySetup function for each library only once per program.
-
 (function() {
   var libraryStorage = {};
   var unloadedLibraries = [];
