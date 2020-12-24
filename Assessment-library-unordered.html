@@ -1,0 +1,477 @@
+<script src="simpletest.js"></script>
+<script>
+
+// Function signature:
+// librarySystem(libraryName, dependencies, librarySetup)
+
+// Return value:
+// Requested library.
+
+// Callback:
+// It should accept a list of dependency libraries.
+
+// Requirements:
+
+// It should load libraries.
+// It should return a library when given a libraryName.
+// It should accept an array that lists required dependencies.
+// Libraries that need a dependency library should have access to the elements of the dependency.
+// It should accept more than one dependency library.
+// It should throw a TypeError if the second argument is not an array.
+// It should be able to load a library before loading its dependency.
+// It should be able to load a library before loading multiple dependencies.
+// It should be able to load multiple libraries needing the same dependency before loading that dependency.
+// It should run the librarySetup function for each library only once per program.
+
+(function() {
+  var libraryStorage = {};
+  var unloadedLibraries = [];
+  var expectedDependencies = {};
+
+  function librarySystem(libraryName, dependencies, librarySetup) {
+    // Helper function to check if dependencies for a library are already loaded into libraryStorage.
+    function checkForDependencies(libraryName, dependencies, librarySetup, newLibraryWithDependency) {
+      var dependenciesLoaded = true;
+
+      for (var i = 0; i < dependencies.length; i++) {
+        if (!(dependencies[i] in libraryStorage)) {
+          dependenciesLoaded = false;
+
+          if (newLibraryWithDependency) {
+            if (!(dependencies[i] in expectedDependencies)) {
+              expectedDependencies[dependencies[i]] = {
+                name: dependencies[i],
+                count: 1
+              };
+
+            } else {
+              expectedDependencies[dependencies[i]].count++;
+            }
+          }
+        }
+      }
+      
+      if (dependenciesLoaded) {
+        loadLibrary(libraryName, dependencies, librarySetup, !newLibraryWithDependency);
+
+      } else {
+        return false;
+      }
+    }
+
+    //Helper function to load libraries with dependencies into libraryStorage.
+    function loadLibrary(libraryName, dependencies, librarySetup, wasWaitingForDependencies) {
+      var dependencyArray = [];
+
+      for (var i = 0; i < dependencies.length; i++) {
+        var dependencyName = dependencies[i];
+
+        dependencyArray.push(libraryStorage[dependencyName]);
+        
+        if (wasWaitingForDependencies) {
+          expectedDependencies[dependencyName].count--;
+
+          if (expectedDependencies[dependencyName].count === 0) {
+            delete expectedDependencies[dependencyName];
+          }
+
+          for (var j = 0; j < unloadedLibraries.length; j++) {
+            if (unloadedLibraries[j].libraryName === libraryName) {
+              unloadedLibraries.splice(j, 1);
+            }
+          }
+        }
+      }
+
+      libraryStorage[libraryName] = librarySetup.apply(this, dependencyArray);
+    }
+
+    // Check if the library is being loaded. Otherwise, return the library.
+    if (arguments.length > 1) {
+      if (!Array.isArray(dependencies)) {
+        throw new TypeError('Dependencies should be listed in an array.');
+      }
+
+      // If there are no dependency libraries, load the library into libraryStorage.
+      if (dependencies.length === 0) {
+        libraryStorage[libraryName] = librarySetup();
+
+        // Check if the library is expected as a dependency of another library.
+        if (libraryName in expectedDependencies) {
+          var unloadedLibraryCount = unloadedLibraries.length;
+          var mainLibraries = [];
+
+          for (var i = 0; i < unloadedLibraryCount; i++) {
+            mainLibraries[i] = unloadedLibraries[i];
+          }
+
+          // Check each unloaded mainLibrary and load libraries that need the given library as a dependency.
+          for (var i = 0; i < unloadedLibraryCount; i++) {
+            var mainLibrary = mainLibraries[i];
+          
+            // Check if all of mainLibrary's dependency libraries are in libraryStorage.
+            // If so, checkForDependencies will call loadLibrary and load the mainLibrary.
+            if (mainLibrary.dependencies.includes(libraryName)) {
+              checkForDependencies(mainLibrary.libraryName, mainLibrary.dependencies, mainLibrary.librarySetup);
+            }
+          }
+        }
+      
+      // If the library has dependency libraries, check if they have already been loaded into libraryStorage.
+      // If so, checkForDependencies will call loadLibrary to load it. Otherwise, add to unloadedLibraries.  
+      } else {
+        var dependenciesLoaded = checkForDependencies(libraryName, dependencies, librarySetup, true);
+        
+        if (!dependenciesLoaded) {
+          unloadedLibraries.push ({
+            libraryName: libraryName,
+            dependencies: dependencies,
+            librarySetup: librarySetup
+          });
+        }
+      }
+    
+    } else {
+      return libraryStorage[libraryName];
+    }
+  }
+
+  window.librarySystem = librarySystem;
+})();
+
+tests({
+  'It should store libraries and it should return a library when given a libraryName.': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function() {
+      var apple = {
+        name: 'Apple'
+      };
+
+      var fruitLibrary = {
+        apple: apple
+      };
+    
+      return fruitLibrary;
+    };
+    librarySystem(libraryName, [], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.apple.name, librarySetup().apple.name);
+  },
+  'It should accept an array that optionally lists required dependency libraries': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function() {
+      var apple = {
+        name: 'Apple'
+      };
+
+      var fruitLibrary = {
+        apple: apple
+      };
+    
+      return fruitLibrary;
+    };
+
+    var dependencyName = 'sizeLibrary';
+    var dependencyLibrarySetup = function() {
+      var size = {
+        big: 'big'
+      };
+
+      var sizeLibrary = {
+        size: size
+      };
+  
+      return sizeLibrary;
+    };
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    var returnDependencyLibrary = librarySystem(dependencyName);
+    eq(returnDependencyLibrary.size.big, dependencyLibrarySetup().size.big);
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.apple.name, librarySetup().apple.name);
+  },
+  'Libraries that need a dependency library should have access to the elements of the dependency.': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function(sizeLibrary) {
+      var apple = {
+        name: 'Apple'
+      };
+
+      function size() {
+        return sizeLibrary.size.big;
+      }
+
+      var fruitLibrary = {
+        apple: apple,
+        size: size
+      };
+    
+      return fruitLibrary;
+    };
+
+    var dependencyName = 'sizeLibrary';
+    var dependencyLibrarySetup = function() {
+      var size = {
+        big: 'big'
+      };
+
+      var sizeLibrary = {
+        size: size
+      };
+  
+      return sizeLibrary;
+    };
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.size(), 'big');
+  },
+  'It should accept more than one dependency library.': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function(sizeLibrary, colorsLibrary) {
+      var apple = {
+        name: 'Apple'
+      };
+
+      function sizeColor() {
+        var size = sizeLibrary.size.big;
+        var color = colorsLibrary.colors.red;
+        return size + ' ' + color;
+      }
+
+      var fruitLibrary = {
+        apple: apple,
+        sizeColor: sizeColor
+      };
+    
+      return fruitLibrary;
+    };
+
+    var firstDependencyName = 'sizeLibrary';
+    var firstDependencyLibrarySetup = function() {
+      var size = {
+        big: 'big'
+      };
+
+      var sizeLibrary = {
+        size: size
+      };
+  
+      return sizeLibrary;
+    };
+
+    var secondDependencyName = 'colorsLibrary';
+    var secondDependencyLibrarySetup = function() {
+      var colors = {
+        red: 'red'
+      };
+
+      var colorsLibrary = {
+        colors: colors
+      };
+  
+      return colorsLibrary;
+    };
+    librarySystem(firstDependencyName, [], firstDependencyLibrarySetup);
+    librarySystem(secondDependencyName, [], secondDependencyLibrarySetup);
+    librarySystem(libraryName, [firstDependencyName, secondDependencyName], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.sizeColor(), 'big red'); 
+  },
+  'It should throw a TypeError if the second argument is not an array.': function() {
+    var libraryName = 'testLibrary';
+    var dependencyName = 'dependency';
+    var isTypeError = false;
+      
+    try {
+      librarySystem(libraryName, dependencyName, function() {})
+
+    } catch(e) {
+      var isTypeError = (e instanceof TypeError);
+    }
+
+    eq(isTypeError, true);
+  },
+  'It should be able to load a library before loading its dependencies.': function() {
+    var libraryName = 'personLibrary';
+    var librarySetup = function(hairLibrary) {
+      var joe = {
+        name: 'Joe'
+      };
+
+      function hair() {
+        return hairLibrary.color.black;
+      }
+
+      var personLibrary = {
+        joe: joe,
+        hair: hair
+      };
+  
+      return personLibrary;
+    };
+
+    var dependencyName = 'hairLibrary';
+    var dependencyLibrarySetup = function() {
+      var color = {
+        black: 'black'
+      };
+
+      var hairLibrary = {
+        color: color
+      };
+  
+      return hairLibrary;
+    };
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.hair(), 'black');
+  },
+  'It should be able to load a library before loading multiple dependencies.': function() {
+    var libraryName = 'carLibrary';
+    var librarySetup = function(wheelsLibrary, doorsLibrary) {
+      var volvo = {
+        name: 'Volvo'
+      };
+
+      function doorWheels() {
+        var wheels = wheelsLibrary.wheels.four;
+        var doors = doorsLibrary.doors.four;
+        return wheels + ' ' + doors; 
+      }
+
+      var carLibrary = {
+        volvo: volvo,
+        doorWheels: doorWheels
+      };
+  
+      return carLibrary;
+    };
+
+    var firstDependencyName = 'wheelsLibrary';
+    var firstDependencyLibrarySetup = function() {
+      var wheels = {
+        four: 'four wheels'
+      };
+
+      var wheelsLibrary = {
+        wheels: wheels
+      };
+  
+      return wheelsLibrary;
+    };
+
+    var secondDependencyName = 'doorsLibrary';
+    var secondDependencyLibrarySetup = function() {
+      var doors = {
+        four: 'four doors'
+      };
+
+      var doorsLibrary = {
+        doors: doors
+      };
+  
+      return doorsLibrary;
+    };
+    librarySystem(libraryName, [firstDependencyName, secondDependencyName], librarySetup);
+    librarySystem(firstDependencyName, [], firstDependencyLibrarySetup);
+    librarySystem(secondDependencyName, [], secondDependencyLibrarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.doorWheels(), 'four wheels four doors'); 
+  },
+  'It should be able to load multiple libraries needing the same dependency before loading that dependency.': function() {
+    var dependencyLibraryName = 'shapeLibrary';
+    var dependencyLibrarySetup = function() {
+      var shape = {
+        circle: 'circle'
+      };
+
+      var shapeLibrary = {
+        shape: shape
+      };
+  
+      return shapeLibrary;
+    };
+
+    var firstMainName = 'worldLibrary';
+    var firstMainLibrarySetup = function(shapeLibrary) {
+      var color = {
+        blue: 'blue'
+      };
+
+      function shapeWorld() {
+        var world = worldLibrary.color.blue;
+        var shape = shapeLibrary.shape.circle;
+        return world + ' ' + shape; 
+      }
+
+      var worldLibrary = {
+        color: color,
+        shapeWorld: shapeWorld
+      };
+  
+      return worldLibrary;
+    };
+
+    var secondMainName = 'tableLibrary';
+    var secondMainLibrarySetup = function(shapeLibrary) {
+      var legs = {
+        four: 'four legs'
+      };
+
+      function shapeTable() {
+        var table = tableLibrary.legs.four;
+        var shape = shapeLibrary.shape.circle;
+        return table + ' ' + shape; 
+      }
+
+      var tableLibrary = {
+        legs: legs,
+        shapeTable: shapeTable
+      };
+  
+      return tableLibrary;
+    };
+    librarySystem(firstMainName, [dependencyLibraryName], firstMainLibrarySetup);
+    librarySystem(secondMainName, [dependencyLibraryName], secondMainLibrarySetup);
+    librarySystem(dependencyLibraryName, [], dependencyLibrarySetup);
+    var returnLibrary = librarySystem(firstMainName);
+    eq(returnLibrary.shapeWorld(), 'blue circle'); 
+    returnLibrary = librarySystem(secondMainName);
+    eq(returnLibrary.shapeTable(), 'four legs circle'); 
+  },
+  'It should run the librarySetup function for each library only once per program.': function() {
+    var libraryName = 'countLibrary';
+    var timesLibrarySetupHasRun = 0;
+    var librarySetup = function(dependency) {
+      var countLibrary = {
+        dependency: dependency
+      };
+      
+      timesLibrarySetupHasRun++;
+
+      return countLibrary;
+    };
+
+    var dependencyName = 'dependency';
+    var timesDependencyLibrarySetupHasRun = 0;
+    var dependencyLibrarySetup = function() {
+      var dependency = {};
+      
+      timesDependencyLibrarySetupHasRun++;
+
+      return dependency;
+    }
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    returnLibrary = librarySystem(libraryName);
+    returnLibraryAgain = librarySystem(libraryName);
+    returnDependencyLibrary = librarySystem(dependencyName);
+    eq(timesLibrarySetupHasRun, 1);
+    eq(timesDependencyLibrarySetupHasRun, 1);
+  }
+});  
+
+</script>
+
