@@ -1,0 +1,324 @@
+<script src="simpletest.js"></script>
+<script>
+
+(function() {
+  var libraryStorage = {};
+
+  function librarySystem(libraryName, dependencies, librarySetup) {
+    if (arguments.length === 1) {
+      return libraryStorage[libraryName];
+    }
+
+    if (!Array.isArray(dependencies)) {
+      throw new TypeError('Dependencies should be listed in an array.');
+    }
+
+    var dependenciesLoaded = true;
+    var dependencyArray = [];
+
+    for (var i = 0; i < dependencies.length; i++) {
+      if (dependencies[i] in libraryStorage) {
+        // Check if the dependency library has sub dependencies. If sub dependencies are loaded, this will load the current dependency and add it to dependecyArray.
+        if (Array.isArray(libraryStorage[dependencies[i]]) && libraryStorage[dependencies[i]][1].length > 0) {
+          var subDependenciesLoaded = librarySystem(libraryStorage[dependencies[i]][0], libraryStorage[dependencies[i]][1], libraryStorage[dependencies[i]][2]);
+        
+          if (subDependenciesLoaded) {
+            dependencyArray.push(libraryStorage[dependencies[i]]);
+
+          } else {
+            dependenciesLoaded = false;
+            break;
+          }
+
+        } else {
+          dependencyArray.push(libraryStorage[dependencies[i]]);
+        }
+
+      } else {
+        dependenciesLoaded = false;
+        break;
+      }
+    }
+    
+    if (dependenciesLoaded) {
+      libraryStorage[libraryName] = librarySetup.apply(this, dependencyArray);
+      
+      // Check if any other libraries need libraryName as a dependency.
+      for (var i = 0; i < Object.keys(libraryStorage).length ; i++) {
+        var currentLibrary = libraryStorage[Object.keys(libraryStorage)[i]];
+
+        if (Array.isArray(currentLibrary) && currentLibrary[1].includes(libraryName)) {
+          librarySystem(currentLibrary[0], currentLibrary[1], currentLibrary[2]);
+        }
+      }
+
+    } else {
+      libraryStorage[libraryName] = [libraryName, dependencies, librarySetup];
+    }
+
+    return dependenciesLoaded;
+  }
+
+  window.librarySystem = librarySystem;
+})();
+
+tests({
+  'It should store libraries and it should return a library when given a libraryName.': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function() {
+      var fruitLibrary = {
+        apple: 'apple'
+      };
+    
+      return fruitLibrary;
+    };
+    librarySystem(libraryName, [], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.apple, librarySetup().apple);
+  },
+  'It should accept an array that optionally lists required dependency libraries': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function() {
+      var fruitLibrary = {
+        apple: 'apple'
+      };
+    
+      return fruitLibrary;
+    };
+
+    var dependencyName = 'sizeLibrary';
+    var dependencyLibrarySetup = function() {
+
+      var sizeLibrary = {
+        size: 'big'
+      };
+  
+      return sizeLibrary;
+    };
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    var returnDependencyLibrary = librarySystem(dependencyName);
+    eq(returnDependencyLibrary.size, dependencyLibrarySetup().size);
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.apple, librarySetup().apple);
+  },
+  'Libraries that need a dependency library should have access to the elements of the dependency.': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function(sizeLibrary) {
+
+      var fruitLibrary = {
+        size: sizeLibrary.size
+      };
+    
+      return fruitLibrary;
+    };
+
+    var dependencyName = 'sizeLibrary';
+    var dependencyLibrarySetup = function() {
+
+      var sizeLibrary = {
+        size: 'big'
+      };
+  
+      return sizeLibrary;
+    };
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.size, 'big');
+  },
+  'It should accept more than one dependency library.': function() {
+    var libraryName = 'fruitLibrary';
+    var librarySetup = function(sizeLibrary, colorsLibrary) {
+      var fruitLibrary = {
+        sizeColor: sizeLibrary.size + ' ' + colorsLibrary.colors
+      };
+    
+      return fruitLibrary;
+    };
+
+    var firstDependencyName = 'sizeLibrary';
+    var firstDependencyLibrarySetup = function() {
+      var sizeLibrary = {
+        size: 'big'
+      };
+  
+      return sizeLibrary;
+    };
+
+    var secondDependencyName = 'colorsLibrary';
+    var secondDependencyLibrarySetup = function() {
+      var colorsLibrary = {
+        colors: 'red'
+      };
+  
+      return colorsLibrary;
+    };
+    librarySystem(firstDependencyName, [], firstDependencyLibrarySetup);
+    librarySystem(secondDependencyName, [], secondDependencyLibrarySetup);
+    librarySystem(libraryName, [firstDependencyName, secondDependencyName], librarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.sizeColor, 'big red'); 
+  },
+  'It should throw a TypeError if the second argument is not an array.': function() {
+    var libraryName = 'testLibrary';
+    var dependencyName = 'dependency';
+    var isTypeError = false;
+      
+    try {
+      librarySystem(libraryName, dependencyName, function() {})
+
+    } catch(e) {
+      isTypeError = (e instanceof TypeError);
+    }
+
+    eq(isTypeError, true);
+  },
+  'It should be able to load a library before loading its dependencies.': function() {
+    var libraryName = 'personLibrary';
+    var librarySetup = function(hairLibrary) {
+      var personLibrary = {
+        hair: hairLibrary.color
+      };
+  
+      return personLibrary;
+    };
+
+    var dependencyName = 'hairLibrary';
+    var dependencyLibrarySetup = function() {
+      var hairLibrary = {
+        color: 'black'
+      };
+  
+      return hairLibrary;
+    };
+
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.hair, 'black');
+  },
+  'It should be able to load a library before loading multiple dependencies.': function() {
+    var libraryName = 'carLibrary';
+    var librarySetup = function(wheelsLibrary, doorsLibrary) {
+      var carLibrary = {
+        doorWheels: wheelsLibrary.wheels + ' ' + doorsLibrary.doors
+      };
+  
+      return carLibrary;
+    };
+
+    var firstDependencyName = 'wheelsLibrary';
+    var firstDependencyLibrarySetup = function() {
+      var wheelsLibrary = {
+        wheels: 'four wheels'
+      };
+  
+      return wheelsLibrary;
+    };
+
+    var secondDependencyName = 'doorsLibrary';
+    var secondDependencyLibrarySetup = function() {
+      var doorsLibrary = {
+        doors: 'four doors'
+      };
+  
+      return doorsLibrary;
+    };
+    librarySystem(libraryName, [firstDependencyName, secondDependencyName], librarySetup);
+    librarySystem(firstDependencyName, [], firstDependencyLibrarySetup);
+    librarySystem(secondDependencyName, [], secondDependencyLibrarySetup);
+    var returnLibrary = librarySystem(libraryName);
+    eq(returnLibrary.doorWheels, 'four wheels four doors'); 
+  },
+  'It should be able to load multiple libraries needing the same dependency before loading that dependency.': function() {
+    var dependencyLibraryName = 'shapeLibrary';
+    var dependencyLibrarySetup = function() {
+      var shapeLibrary = {
+        shape: 'circle'
+      };
+  
+      return shapeLibrary;
+    };
+
+    var firstMainName = 'worldLibrary';
+    var firstMainLibrarySetup = function(shapeLibrary) {
+      var worldLibrary = {
+        shapeWorld: shapeLibrary.shape
+      };
+  
+      return worldLibrary;
+    };
+
+    var secondMainName = 'tableLibrary';
+    var secondMainLibrarySetup = function(shapeLibrary) {
+      var tableLibrary = {
+        shapeTable: shapeLibrary.shape
+      };
+  
+      return tableLibrary;
+    };
+    librarySystem(firstMainName, [dependencyLibraryName], firstMainLibrarySetup);
+    librarySystem(secondMainName, [dependencyLibraryName], secondMainLibrarySetup);
+    librarySystem(dependencyLibraryName, [], dependencyLibrarySetup);
+    var returnLibrary = librarySystem(firstMainName);
+    eq(returnLibrary.shapeWorld, 'circle'); 
+    returnLibrary = librarySystem(secondMainName);
+    eq(returnLibrary.shapeTable, 'circle'); 
+  },
+  'It should run the librarySetup function for each library only once per program.': function() {
+    var libraryName = 'countLibrary';
+    var timesLibrarySetupHasRun = 0;
+    var librarySetup = function(dependency) {
+      var countLibrary = {
+        dependency: dependency
+      };
+      
+      timesLibrarySetupHasRun++;
+
+      return countLibrary;
+    };
+
+    var dependencyName = 'dependency';
+    var timesDependencyLibrarySetupHasRun = 0;
+    var dependencyLibrarySetup = function() {
+      var dependency = {};
+      
+      timesDependencyLibrarySetupHasRun++;
+
+      return dependency;
+    }
+    librarySystem(libraryName, [dependencyName], librarySetup);
+    librarySystem(dependencyName, [], dependencyLibrarySetup);
+    returnLibrary = librarySystem(libraryName);
+    returnLibraryAgain = librarySystem(libraryName);
+    returnDependencyLibrary = librarySystem(dependencyName);
+    eq(timesLibrarySetupHasRun, 1);
+    eq(timesDependencyLibrarySetupHasRun, 1);
+  },
+  'It should accept nested dependency libraries': function() {
+    var libraryName = 'politicianLibrary';
+    var librarySetup = function(titleLibrary) {
+      return titleLibrary + ' Joe Biden';
+    };
+
+    var firstDependencyName = 'titleLibrary';
+    var firstDependencyLibrarySetup = function(numberLibrary) {
+      return numberLibrary + ' President';
+    };
+
+    var secondDependencyName = 'numberLibrary';
+    var secondDependencyLibrarySetup = function() {
+      return '46th';
+    };
+    librarySystem(firstDependencyName, [secondDependencyName], firstDependencyLibrarySetup);
+    librarySystem(libraryName, [firstDependencyName], librarySetup);
+    librarySystem(secondDependencyName, [], secondDependencyLibrarySetup);   
+    eq(librarySystem(libraryName), '46th President Joe Biden');
+  }
+
+
+
+});  
+
+</script>
